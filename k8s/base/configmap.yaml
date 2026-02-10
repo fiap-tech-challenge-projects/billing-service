@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: billing-service-config
+data:
+  DYNAMODB_BUDGETS_TABLE: ""  # Will be set by overlay
+  DYNAMODB_PAYMENTS_TABLE: ""  # Will be set by overlay
+  EVENT_BUS_NAME: ""  # Will be set by overlay
