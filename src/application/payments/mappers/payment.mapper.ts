@@ -12,7 +12,7 @@ export class PaymentMapper {
     return {
       id: payment.id,
       budgetId: payment.budgetId,
-      amountInCents: payment.amount.amountInCents,
+      amountInCents: payment.amount.amount,
       currency: payment.amount.currency,
       status: payment.status,
       mercadoPagoPaymentId: payment.mercadoPagoPaymentId,

@@ -31,15 +31,15 @@ export class DynamoDBBudgetRepository implements IBudgetRepository {
     const item = {
       id,
       serviceOrderId: budget.serviceOrderId,
-      totalAmountInCents: budget.totalAmount.amountInCents,
+      totalAmountInCents: budget.totalAmount.amount,
       currency: budget.totalAmount.currency,
       status: budget.status,
       items: budget.items.map((item) => ({
         id: crypto.randomUUID(),
         description: item.description,
         quantity: item.quantity,
-        unitPriceInCents: item.unitPrice.amountInCents,
-        totalPriceInCents: item.totalPrice.amountInCents,
+        unitPriceInCents: item.unitPrice.amount,
+        totalPriceInCents: item.totalPrice.amount,
         currency: item.unitPrice.currency,
       })),
       approvedAt: budget.approvedAt?.toISOString(),

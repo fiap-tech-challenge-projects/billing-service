@@ -4,6 +4,7 @@ import { IPaymentRepository } from '@domain/payments/repositories'
 import { IBudgetRepository } from '@domain/budgets/repositories'
 import { IEventPublisher } from '@application/events/interfaces/event-publisher.interface'
 import { IMercadoPagoService } from '@infra/payment/interfaces/mercado-pago-service.interface'
+import { BudgetStatus } from '@shared/value-objects'
 import { CreatePaymentDto, PaymentResponseDto } from '../dtos'
 import { PaymentMapper } from '../mappers/payment.mapper'
 
@@ -28,7 +29,7 @@ export class CreatePaymentUseCase {
     }
 
     // Check if budget is approved
-    if (!budget.isApproved) {
+    if (budget.status !== BudgetStatus.APPROVED) {
       throw new Error('Budget must be approved before creating payment')
     }
 
@@ -50,7 +51,7 @@ export class CreatePaymentUseCase {
     // Create Mercado Pago payment and get QR code
     const mercadoPagoPayment =
       await this.mercadoPagoService.createPayment({
-        transactionAmount: budget.totalAmount.amountInCents / 100,
+        transactionAmount: budget.totalAmount.amount / 100,
         description: `Payment for budget ${budget.id}`,
         externalReference: createdPayment.id,
       })
@@ -69,7 +70,7 @@ export class CreatePaymentUseCase {
     await this.eventPublisher.publishPaymentInitiated({
       paymentId: updatedPayment.id,
       budgetId: updatedPayment.budgetId,
-      amountInCents: updatedPayment.amount.amountInCents,
+      amountInCents: updatedPayment.amount.amount,
       currency: updatedPayment.amount.currency,
     })
 

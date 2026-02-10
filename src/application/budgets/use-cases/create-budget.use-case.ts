@@ -40,7 +40,7 @@ export class CreateBudgetUseCase {
     await this.eventPublisher.publishBudgetGenerated({
       budgetId: createdBudget.id,
       serviceOrderId: createdBudget.serviceOrderId,
-      totalAmountInCents: createdBudget.totalAmount.amountInCents,
+      totalAmountInCents: createdBudget.totalAmount.amount,
       currency: createdBudget.totalAmount.currency,
     })
 

@@ -30,7 +30,7 @@ export class DynamoDBPaymentRepository implements IPaymentRepository {
     const item = {
       id,
       budgetId: payment.budgetId,
-      amountInCents: payment.amount.amountInCents,
+      amountInCents: payment.amount.amount,
       currency: payment.amount.currency,
       status: payment.status,
       mercadoPagoPaymentId: payment.mercadoPagoPaymentId,
@@ -226,7 +226,7 @@ export class DynamoDBPaymentRepository implements IPaymentRepository {
   }
 
   private mapToDomain(data: any): Payment {
-    const amount = Money.create(data.amountInCents, data.currency)
+    const amount = Money.create(data.amount, data.currency)
 
     return new Payment(
       data.id,

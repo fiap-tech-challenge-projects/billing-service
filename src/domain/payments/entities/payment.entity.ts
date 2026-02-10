@@ -54,7 +54,7 @@ export class Payment extends BaseEntity {
       throw new Error('Budget ID is required')
     }
 
-    if (amount.amountInCents <= 0) {
+    if (amount.amount <= 0) {
       throw new Error('Payment amount must be positive')
     }
 
