@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common'
+import { Injectable, NotFoundException, Inject } from '@nestjs/common'
 import { IBudgetRepository } from '@domain/budgets/repositories'
 import { BudgetResponseDto } from '../dtos'
 import { BudgetMapper } from '../mappers/budget.mapper'
@@ -8,7 +8,10 @@ import { BudgetMapper } from '../mappers/budget.mapper'
  */
 @Injectable()
 export class GetBudgetUseCase {
-  constructor(private readonly budgetRepository: IBudgetRepository) {}
+  constructor(
+    @Inject('IBudgetRepository')
+    private readonly budgetRepository: IBudgetRepository
+  ) {}
 
   async execute(budgetId: string): Promise<BudgetResponseDto> {
     const budget = await this.budgetRepository.findById(budgetId)

@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common'
+import { Injectable, NotFoundException, Inject } from '@nestjs/common'
 import { Payment } from '@domain/payments/entities'
 import { IPaymentRepository } from '@domain/payments/repositories'
 import { IBudgetRepository } from '@domain/budgets/repositories'
@@ -14,9 +14,13 @@ import { PaymentMapper } from '../mappers/payment.mapper'
 @Injectable()
 export class CreatePaymentUseCase {
   constructor(
+    @Inject('IPaymentRepository')
     private readonly paymentRepository: IPaymentRepository,
+    @Inject('IBudgetRepository')
     private readonly budgetRepository: IBudgetRepository,
+    @Inject('IMercadoPagoService')
     private readonly mercadoPagoService: IMercadoPagoService,
+    @Inject('IEventPublisher')
     private readonly eventPublisher: IEventPublisher,
   ) {}
 

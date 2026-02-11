@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common'
+import { Injectable, NotFoundException, Inject } from '@nestjs/common'
 import { IPaymentRepository } from '@domain/payments/repositories'
 import { PaymentResponseDto } from '../dtos'
 import { PaymentMapper } from '../mappers/payment.mapper'
@@ -8,7 +8,10 @@ import { PaymentMapper } from '../mappers/payment.mapper'
  */
 @Injectable()
 export class GetPaymentUseCase {
-  constructor(private readonly paymentRepository: IPaymentRepository) {}
+  constructor(
+    @Inject('IPaymentRepository')
+    private readonly paymentRepository: IPaymentRepository
+  ) {}
 
   async execute(paymentId: string): Promise<PaymentResponseDto> {
     const payment = await this.paymentRepository.findById(paymentId)

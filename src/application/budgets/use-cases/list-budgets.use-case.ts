@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common'
+import { Injectable, Inject } from '@nestjs/common'
 import { IBudgetRepository } from '@domain/budgets/repositories'
 import { BudgetStatus } from '@shared/value-objects'
 import { BudgetResponseDto } from '../dtos'
@@ -9,7 +9,10 @@ import { BudgetMapper } from '../mappers/budget.mapper'
  */
 @Injectable()
 export class ListBudgetsUseCase {
-  constructor(private readonly budgetRepository: IBudgetRepository) {}
+  constructor(
+    @Inject('IBudgetRepository')
+    private readonly budgetRepository: IBudgetRepository
+  ) {}
 
   async execute(filters?: {
     serviceOrderId?: string

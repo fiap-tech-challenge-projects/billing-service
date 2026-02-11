@@ -25,7 +25,7 @@ configMapGenerator:
 
 images:
   - name: billing-service
-    newName: billing-service
+    newName: 305032652600.dkr.ecr.us-east-1.amazonaws.com/billing-service
     newTag: dev-latest
 
 patches:

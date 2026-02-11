@@ -8,8 +8,8 @@ on:
 
 env:
   AWS_REGION: us-east-1
-  ECR_REPOSITORY: fiap-billing-service
-  EKS_CLUSTER_NAME: fiap-tech-challenge-cluster
+  ECR_REPOSITORY: billing-service
+  EKS_CLUSTER_NAME: fiap-tech-challenge-eks-development
 
 jobs:
   test:
@@ -77,7 +77,7 @@ jobs:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           IMAGE_TAG: ${{ steps.vars.outputs.TAG }}
         run: |
-          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          docker build --platform linux/amd64 -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
 
           # Tag as latest for environment
@@ -113,6 +113,15 @@ jobs:
       - name: Update kubeconfig
         run: |
           aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER_NAME }} --region ${{ env.AWS_REGION }}
+
+      - name: Update AWS Credentials in Kubernetes
+        run: |
+          kubectl create secret generic dev-billing-service-aws-creds -n ftc-app \
+            --from-literal=AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }} \
+            --from-literal=AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }} \
+            --from-literal=AWS_SESSION_TOKEN=${{ secrets.AWS_SESSION_TOKEN }} \
+            --from-literal=AWS_REGION=${{ env.AWS_REGION }} \
+            --dry-run=client -o yaml | kubectl apply -f -
 
       - name: Deploy to Kubernetes
         run: |
