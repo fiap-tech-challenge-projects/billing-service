@@ -1,7 +1,7 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
-namespace: ftc-app
+namespace: ftc-app-production
 
 bases:
   - ../../base
@@ -15,9 +15,10 @@ configMapGenerator:
   - name: billing-service-config
     behavior: merge
     literals:
-      - DYNAMODB_BUDGETS_TABLE=fiap-budgets-prod
-      - DYNAMODB_PAYMENTS_TABLE=fiap-payments-prod
-      - EVENT_BUS_NAME=fiap-tech-challenge-event-bus
+      - DYNAMODB_BUDGETS_TABLE=fiap-tech-challenge-budgets-production
+      - DYNAMODB_PAYMENTS_TABLE=fiap-tech-challenge-payments-production
+      - EVENT_BUS_NAME=fiap-tech-challenge-events-production
+      - SQS_QUEUE_URL=https://sqs.us-east-1.amazonaws.com/305032652600/billing-service-events-production
 
 images:
   - name: billing-service

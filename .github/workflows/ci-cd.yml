@@ -9,7 +9,6 @@ on:
 env:
   AWS_REGION: us-east-1
   ECR_REPOSITORY: billing-service
-  EKS_CLUSTER_NAME: fiap-tech-challenge-eks-development
 
 jobs:
   test:
@@ -80,9 +79,11 @@ jobs:
           docker build --platform linux/amd64 -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
 
-          # Tag as latest for environment
+          # Tag as latest for environment and universal latest
           docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:${{ steps.vars.outputs.ENV }}-latest
+          docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:latest
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:${{ steps.vars.outputs.ENV }}-latest
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
 
   deploy:
     name: Deploy to EKS
@@ -110,13 +111,26 @@ jobs:
             echo "ENV=development" >> $GITHUB_OUTPUT
           fi
 
+      - name: Set namespace
+        id: ns
+        run: |
+          echo "NAMESPACE=ftc-app-${{ steps.vars.outputs.ENV }}" >> $GITHUB_OUTPUT
+
       - name: Update kubeconfig
         run: |
-          aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER_NAME }} --region ${{ env.AWS_REGION }}
+          aws eks update-kubeconfig --name fiap-tech-challenge-eks-${{ steps.vars.outputs.ENV }} --region ${{ env.AWS_REGION }}
 
       - name: Update AWS Credentials in Kubernetes
         run: |
-          kubectl create secret generic dev-billing-service-aws-creds -n ftc-app \
+          # billing-service dev overlay uses namePrefix: dev-
+          if [ "${{ steps.vars.outputs.ENV }}" == "development" ]; then
+            SECRET_NAME="dev-billing-service-aws-creds"
+            DEPLOY_NAME="dev-billing-service"
+          else
+            SECRET_NAME="billing-service-aws-creds"
+            DEPLOY_NAME="billing-service"
+          fi
+          kubectl create secret generic $SECRET_NAME -n ${{ steps.ns.outputs.NAMESPACE }} \
             --from-literal=AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }} \
             --from-literal=AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }} \
             --from-literal=AWS_SESSION_TOKEN=${{ secrets.AWS_SESSION_TOKEN }} \
@@ -129,4 +143,8 @@ jobs:
 
       - name: Verify deployment
         run: |
-          kubectl rollout status deployment/billing-service -n ftc-app --timeout=5m
+          if [ "${{ steps.vars.outputs.ENV }}" == "development" ]; then
+            kubectl rollout status deployment/dev-billing-service -n ${{ steps.ns.outputs.NAMESPACE }} --timeout=5m
+          else
+            kubectl rollout status deployment/billing-service -n ${{ steps.ns.outputs.NAMESPACE }} --timeout=5m
+          fi

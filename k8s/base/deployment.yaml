@@ -34,6 +34,10 @@ spec:
             - containerPort: 3001
               name: http
               protocol: TCP
+          envFrom:
+            - secretRef:
+                name: billing-service-aws-creds
+                optional: true
           env:
             - name: NODE_ENV
               value: "production"
@@ -56,6 +60,11 @@ spec:
                 configMapKeyRef:
                   name: billing-service-config
                   key: EVENT_BUS_NAME
+            - name: SQS_QUEUE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: billing-service-config
+                  key: SQS_QUEUE_URL
             - name: MERCADO_PAGO_ACCESS_TOKEN
               valueFrom:
                 secretKeyRef:
