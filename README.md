@@ -218,7 +218,6 @@ Same pattern as OS Service:
 
 - [os-service](../os-service) - Service Order Management (publishes OrderCreated)
 - [execution-service](../execution-service) - Execution Management (consumes PaymentCompleted)
-- [saga-orchestrator-service](../saga-orchestrator-service) - Saga Orchestration
 
 ## License
 
