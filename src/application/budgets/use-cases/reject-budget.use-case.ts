@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common'
+import { Injectable, NotFoundException, Inject } from '@nestjs/common'
 import { IBudgetRepository } from '@domain/budgets/repositories'
 import { IEventPublisher } from '@application/events/interfaces/event-publisher.interface'
 import { RejectBudgetDto, BudgetResponseDto } from '../dtos'
@@ -10,7 +10,9 @@ import { BudgetMapper } from '../mappers/budget.mapper'
 @Injectable()
 export class RejectBudgetUseCase {
   constructor(
+    @Inject('IBudgetRepository')
     private readonly budgetRepository: IBudgetRepository,
+    @Inject('IEventPublisher')
     private readonly eventPublisher: IEventPublisher,
   ) {}
 

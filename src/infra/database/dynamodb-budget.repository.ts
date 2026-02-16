@@ -15,6 +15,8 @@ import { Money, BudgetStatus } from '@shared/value-objects'
 
 /**
  * DynamoDB implementation of budget repository
+ * Table key: budgetId (HASH) + version (RANGE)
+ * GSI: ServiceOrderIndex (serviceOrderId), StatusIndex (status + budgetId)
  */
 @Injectable()
 export class DynamoDBBudgetRepository implements IBudgetRepository {
@@ -25,11 +27,12 @@ export class DynamoDBBudgetRepository implements IBudgetRepository {
   }
 
   async create(budget: Budget): Promise<Budget> {
-    const id = crypto.randomUUID()
+    const budgetId = crypto.randomUUID()
     const now = new Date()
 
     const item = {
-      id,
+      budgetId,
+      version: Date.now(),
       serviceOrderId: budget.serviceOrderId,
       totalAmountInCents: budget.totalAmount.amount,
       currency: budget.totalAmount.currency,
@@ -64,17 +67,22 @@ export class DynamoDBBudgetRepository implements IBudgetRepository {
 
   async findById(id: string): Promise<Budget | null> {
     const result = await this.dynamoClient.send(
-      new GetItemCommand({
+      new QueryCommand({
         TableName: this.tableName,
-        Key: marshall({ id }),
+        KeyConditionExpression: 'budgetId = :id',
+        ExpressionAttributeValues: {
+          ':id': { S: id },
+        },
+        ScanIndexForward: false,
+        Limit: 1,
       }),
     )
 
-    if (!result.Item) {
+    if (!result.Items || result.Items.length === 0) {
       return null
     }
 
-    return this.mapToDomain(unmarshall(result.Item))
+    return this.mapToDomain(unmarshall(result.Items[0]))
   }
 
   async findByServiceOrderId(serviceOrderId: string): Promise<Budget | null> {
@@ -100,24 +108,55 @@ export class DynamoDBBudgetRepository implements IBudgetRepository {
   async update(budget: Budget): Promise<Budget> {
     const now = new Date()
 
+    // Find the version (sort key) for this budget
+    const existing = await this.dynamoClient.send(
+      new QueryCommand({
+        TableName: this.tableName,
+        KeyConditionExpression: 'budgetId = :id',
+        ExpressionAttributeValues: {
+          ':id': { S: budget.id },
+        },
+        ScanIndexForward: false,
+        Limit: 1,
+      }),
+    )
+
+    const version = existing.Items?.[0]
+      ? unmarshall(existing.Items[0]).version
+      : now.toISOString()
+
+    const expressionParts: string[] = [
+      '#status = :status',
+      '#updatedAt = :updatedAt',
+    ]
+    const exprNames: Record<string, string> = {
+      '#status': 'status',
+      '#updatedAt': 'updatedAt',
+    }
+    const exprValues: Record<string, any> = {
+      ':status': budget.status,
+      ':updatedAt': now.toISOString(),
+    }
+
+    if (budget.approvedAt) {
+      expressionParts.push('#approvedAt = :approvedAt')
+      exprNames['#approvedAt'] = 'approvedAt'
+      exprValues[':approvedAt'] = budget.approvedAt.toISOString()
+    }
+
+    if (budget.rejectedAt) {
+      expressionParts.push('#rejectedAt = :rejectedAt')
+      exprNames['#rejectedAt'] = 'rejectedAt'
+      exprValues[':rejectedAt'] = budget.rejectedAt.toISOString()
+    }
+
     await this.dynamoClient.send(
       new UpdateItemCommand({
         TableName: this.tableName,
-        Key: marshall({ id: budget.id }),
-        UpdateExpression:
-          'SET #status = :status, #updatedAt = :updatedAt, #approvedAt = :approvedAt, #rejectedAt = :rejectedAt',
-        ExpressionAttributeNames: {
-          '#status': 'status',
-          '#updatedAt': 'updatedAt',
-          '#approvedAt': 'approvedAt',
-          '#rejectedAt': 'rejectedAt',
-        },
-        ExpressionAttributeValues: marshall({
-          ':status': budget.status,
-          ':updatedAt': now.toISOString(),
-          ':approvedAt': budget.approvedAt?.toISOString(),
-          ':rejectedAt': budget.rejectedAt?.toISOString(),
-        }, { removeUndefinedValues: true }),
+        Key: marshall({ budgetId: budget.id, version }),
+        UpdateExpression: 'SET ' + expressionParts.join(', '),
+        ExpressionAttributeNames: exprNames,
+        ExpressionAttributeValues: marshall(exprValues),
       }),
     )
 
@@ -126,9 +165,10 @@ export class DynamoDBBudgetRepository implements IBudgetRepository {
 
   async findByStatus(status: BudgetStatus): Promise<Budget[]> {
     const result = await this.dynamoClient.send(
-      new ScanCommand({
+      new QueryCommand({
         TableName: this.tableName,
-        FilterExpression: '#status = :status',
+        IndexName: 'StatusIndex',
+        KeyConditionExpression: '#status = :status',
         ExpressionAttributeNames: {
           '#status': 'status',
         },
@@ -151,28 +191,35 @@ export class DynamoDBBudgetRepository implements IBudgetRepository {
     limit?: number
     offset?: number
   }): Promise<{ budgets: Budget[]; total: number }> {
+    // If filtering by serviceOrderId, use the GSI
+    if (filters?.serviceOrderId) {
+      const result = await this.dynamoClient.send(
+        new QueryCommand({
+          TableName: this.tableName,
+          IndexName: 'ServiceOrderIndex',
+          KeyConditionExpression: 'serviceOrderId = :serviceOrderId',
+          ExpressionAttributeValues: marshall({
+            ':serviceOrderId': filters.serviceOrderId,
+          }),
+          Limit: filters?.limit || 100,
+        }),
+      )
+
+      const budgets = result.Items
+        ? result.Items.map((item) => this.mapToDomain(unmarshall(item)))
+        : []
+
+      return { budgets, total: budgets.length }
+    }
+
     let filterExpression: string | undefined
     let expressionAttributeNames: Record<string, string> | undefined
     let expressionAttributeValues: any
 
-    if (filters?.serviceOrderId || filters?.status) {
-      const conditions: string[] = []
-      expressionAttributeNames = {}
-      expressionAttributeValues = {}
-
-      if (filters.serviceOrderId) {
-        conditions.push('#serviceOrderId = :serviceOrderId')
-        expressionAttributeNames['#serviceOrderId'] = 'serviceOrderId'
-        expressionAttributeValues[':serviceOrderId'] = filters.serviceOrderId
-      }
-
-      if (filters.status) {
-        conditions.push('#status = :status')
-        expressionAttributeNames['#status'] = 'status'
-        expressionAttributeValues[':status'] = filters.status
-      }
-
-      filterExpression = conditions.join(' AND ')
+    if (filters?.status) {
+      filterExpression = '#status = :status'
+      expressionAttributeNames = { '#status': 'status' }
+      expressionAttributeValues = { ':status': filters.status }
     }
 
     const result = await this.dynamoClient.send(
@@ -198,10 +245,27 @@ export class DynamoDBBudgetRepository implements IBudgetRepository {
   }
 
   async delete(id: string): Promise<void> {
+    // Find the version first
+    const existing = await this.dynamoClient.send(
+      new QueryCommand({
+        TableName: this.tableName,
+        KeyConditionExpression: 'budgetId = :id',
+        ExpressionAttributeValues: {
+          ':id': { S: id },
+        },
+        ScanIndexForward: false,
+        Limit: 1,
+      }),
+    )
+
+    if (!existing.Items || existing.Items.length === 0) return
+
+    const version = unmarshall(existing.Items[0]).version
+
     await this.dynamoClient.send(
       new DeleteItemCommand({
         TableName: this.tableName,
-        Key: marshall({ id }),
+        Key: marshall({ budgetId: id, version }),
       }),
     )
   }
@@ -209,7 +273,7 @@ export class DynamoDBBudgetRepository implements IBudgetRepository {
   private mapToDomain(data: any): Budget {
     const totalAmount = Money.create(data.totalAmountInCents, data.currency)
 
-    const items = data.items.map(
+    const items = (data.items || []).map(
       (item: any) =>
         new BudgetItem(
           item.id,
@@ -220,7 +284,7 @@ export class DynamoDBBudgetRepository implements IBudgetRepository {
     )
 
     return new Budget(
-      data.id,
+      data.budgetId,
       data.serviceOrderId,
       totalAmount,
       data.status as BudgetStatus,

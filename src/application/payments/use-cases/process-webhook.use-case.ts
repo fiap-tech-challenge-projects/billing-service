@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common'
+import { Injectable, Logger, Inject } from '@nestjs/common'
 import { IPaymentRepository } from '@domain/payments/repositories'
 import { IBudgetRepository } from '@domain/budgets/repositories'
 import { IEventPublisher } from '@application/events/interfaces/event-publisher.interface'
@@ -12,9 +12,13 @@ export class ProcessWebhookUseCase {
   private readonly logger = new Logger(ProcessWebhookUseCase.name)
 
   constructor(
+    @Inject('IPaymentRepository')
     private readonly paymentRepository: IPaymentRepository,
+    @Inject('IBudgetRepository')
     private readonly budgetRepository: IBudgetRepository,
+    @Inject('IMercadoPagoService')
     private readonly mercadoPagoService: IMercadoPagoService,
+    @Inject('IEventPublisher')
     private readonly eventPublisher: IEventPublisher,
   ) {}
 

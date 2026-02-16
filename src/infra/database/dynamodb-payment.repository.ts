@@ -2,7 +2,6 @@ import { Injectable } from '@nestjs/common'
 import {
   DynamoDBClient,
   PutItemCommand,
-  GetItemCommand,
   UpdateItemCommand,
   QueryCommand,
   ScanCommand,
@@ -14,6 +13,9 @@ import { Money, PaymentStatus } from '@shared/value-objects'
 
 /**
  * DynamoDB implementation of payment repository
+ * Table key: paymentId (HASH) + timestamp (RANGE)
+ * GSI: MercadoPagoIndex (mercadoPagoId), BudgetIndex (budgetId + timestamp),
+ *      ServiceOrderIndex (serviceOrderId + timestamp)
  */
 @Injectable()
 export class DynamoDBPaymentRepository implements IPaymentRepository {
@@ -24,16 +26,17 @@ export class DynamoDBPaymentRepository implements IPaymentRepository {
   }
 
   async create(payment: Payment): Promise<Payment> {
-    const id = crypto.randomUUID()
+    const paymentId = crypto.randomUUID()
     const now = new Date()
 
     const item = {
-      id,
+      paymentId,
+      timestamp: now.toISOString(),
       budgetId: payment.budgetId,
       amountInCents: payment.amount.amount,
       currency: payment.amount.currency,
       status: payment.status,
-      mercadoPagoPaymentId: payment.mercadoPagoPaymentId,
+      mercadoPagoId: payment.mercadoPagoPaymentId,
       qrCode: payment.qrCode,
       qrCodeBase64: payment.qrCodeBase64,
       completedAt: payment.completedAt?.toISOString(),
@@ -60,17 +63,22 @@ export class DynamoDBPaymentRepository implements IPaymentRepository {
 
   async findById(id: string): Promise<Payment | null> {
     const result = await this.dynamoClient.send(
-      new GetItemCommand({
+      new QueryCommand({
         TableName: this.tableName,
-        Key: marshall({ id }),
+        KeyConditionExpression: 'paymentId = :id',
+        ExpressionAttributeValues: {
+          ':id': { S: id },
+        },
+        ScanIndexForward: false,
+        Limit: 1,
       }),
     )
 
-    if (!result.Item) {
+    if (!result.Items || result.Items.length === 0) {
       return null
     }
 
-    return this.mapToDomain(unmarshall(result.Item))
+    return this.mapToDomain(unmarshall(result.Items[0]))
   }
 
   async findByBudgetId(budgetId: string): Promise<Payment | null> {
@@ -98,7 +106,7 @@ export class DynamoDBPaymentRepository implements IPaymentRepository {
       new QueryCommand({
         TableName: this.tableName,
         IndexName: 'MercadoPagoIndex',
-        KeyConditionExpression: 'mercadoPagoPaymentId = :mercadoPagoId',
+        KeyConditionExpression: 'mercadoPagoId = :mercadoPagoId',
         ExpressionAttributeValues: marshall({
           ':mercadoPagoId': mercadoPagoId,
         }),
@@ -116,36 +124,60 @@ export class DynamoDBPaymentRepository implements IPaymentRepository {
   async update(payment: Payment): Promise<Payment> {
     const now = new Date()
 
+    // Find the timestamp (sort key) for this payment
+    const existing = await this.dynamoClient.send(
+      new QueryCommand({
+        TableName: this.tableName,
+        KeyConditionExpression: 'paymentId = :id',
+        ExpressionAttributeValues: {
+          ':id': { S: payment.id },
+        },
+        ScanIndexForward: false,
+        Limit: 1,
+      }),
+    )
+
+    const timestamp = existing.Items?.[0]
+      ? unmarshall(existing.Items[0]).timestamp
+      : now.toISOString()
+
+    const expressionParts: string[] = [
+      '#status = :status',
+      '#updatedAt = :updatedAt',
+    ]
+    const exprNames: Record<string, string> = {
+      '#status': 'status',
+      '#updatedAt': 'updatedAt',
+    }
+    const exprValues: Record<string, any> = {
+      ':status': payment.status,
+      ':updatedAt': now.toISOString(),
+    }
+
+    const optionalFields: [string, any][] = [
+      ['mercadoPagoId', payment.mercadoPagoPaymentId],
+      ['qrCode', payment.qrCode],
+      ['qrCodeBase64', payment.qrCodeBase64],
+      ['completedAt', payment.completedAt?.toISOString()],
+      ['failedAt', payment.failedAt?.toISOString()],
+      ['refundedAt', payment.refundedAt?.toISOString()],
+      ['failureReason', payment.failureReason],
+    ]
+
+    for (const [field, value] of optionalFields) {
+      if (value !== undefined && value !== null) {
+        expressionParts.push(`${field} = :${field}`)
+        exprValues[`:${field}`] = value
+      }
+    }
+
     await this.dynamoClient.send(
       new UpdateItemCommand({
         TableName: this.tableName,
-        Key: marshall({ id: payment.id }),
-        UpdateExpression:
-          'SET #status = :status, #updatedAt = :updatedAt, #mercadoPagoPaymentId = :mercadoPagoPaymentId, ' +
-          '#qrCode = :qrCode, #qrCodeBase64 = :qrCodeBase64, #completedAt = :completedAt, ' +
-          '#failedAt = :failedAt, #refundedAt = :refundedAt, #failureReason = :failureReason',
-        ExpressionAttributeNames: {
-          '#status': 'status',
-          '#updatedAt': 'updatedAt',
-          '#mercadoPagoPaymentId': 'mercadoPagoPaymentId',
-          '#qrCode': 'qrCode',
-          '#qrCodeBase64': 'qrCodeBase64',
-          '#completedAt': 'completedAt',
-          '#failedAt': 'failedAt',
-          '#refundedAt': 'refundedAt',
-          '#failureReason': 'failureReason',
-        },
-        ExpressionAttributeValues: marshall({
-          ':status': payment.status,
-          ':updatedAt': now.toISOString(),
-          ':mercadoPagoPaymentId': payment.mercadoPagoPaymentId,
-          ':qrCode': payment.qrCode,
-          ':qrCodeBase64': payment.qrCodeBase64,
-          ':completedAt': payment.completedAt?.toISOString(),
-          ':failedAt': payment.failedAt?.toISOString(),
-          ':refundedAt': payment.refundedAt?.toISOString(),
-          ':failureReason': payment.failureReason,
-        }, { removeUndefinedValues: true }),
+        Key: marshall({ paymentId: payment.id, timestamp }),
+        UpdateExpression: 'SET ' + expressionParts.join(', '),
+        ExpressionAttributeNames: exprNames,
+        ExpressionAttributeValues: marshall(exprValues),
       }),
     )
 
@@ -189,8 +221,7 @@ export class DynamoDBPaymentRepository implements IPaymentRepository {
       expressionAttributeValues = {}
 
       if (filters.budgetId) {
-        conditions.push('#budgetId = :budgetId')
-        expressionAttributeNames['#budgetId'] = 'budgetId'
+        conditions.push('budgetId = :budgetId')
         expressionAttributeValues[':budgetId'] = filters.budgetId
       }
 
@@ -226,14 +257,14 @@ export class DynamoDBPaymentRepository implements IPaymentRepository {
   }
 
   private mapToDomain(data: any): Payment {
-    const amount = Money.create(data.amount, data.currency)
+    const amount = Money.create(data.amountInCents, data.currency)
 
     return new Payment(
-      data.id,
+      data.paymentId,
       data.budgetId,
       amount,
       data.status as PaymentStatus,
-      data.mercadoPagoPaymentId,
+      data.mercadoPagoId,
       data.qrCode,
       data.qrCodeBase64,
       data.completedAt ? new Date(data.completedAt) : undefined,

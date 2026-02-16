@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common'
+import { Module, forwardRef } from '@nestjs/common'
 import { DatabaseModule } from '@infra/database/database.module'
 import { MessagingModule } from '@infra/messaging/messaging.module'
 import {
@@ -10,7 +10,7 @@ import {
 } from './use-cases'
 
 @Module({
-  imports: [DatabaseModule, MessagingModule],
+  imports: [DatabaseModule, forwardRef(() => MessagingModule)],
   providers: [
     CreateBudgetUseCase,
     ApproveBudgetUseCase,

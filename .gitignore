@@ -49,3 +49,7 @@ CLAUDE.md
 *.tfstate.backup
 *.tfvars
 *.tfvars.json
+*.bak
+*.tmp
+*.swp
+.DS_Store
